@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilkRoute Express - Database Connected v10.5</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Supabase JavaScript Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans antialiased">
+
+    <!-- Top Navigation Bar -->
+    <header id="topBar" class="hidden bg-slate-900 text-white px-6 py-3 shadow-md flex justify-between items-center sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-database text-amber-500 text-xl"></i>
+            <span class="font-bold text-lg tracking-wide">SilkRoute <span class="text-amber-500">Express DB</span></span>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="userInfo" class="text-sm border-r border-slate-700 pr-4"></div>
+            <button onclick="logout()" class="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition font-semibold">
+                <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+            </button>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-6">
+
+        <!-- 1. AUTHENTICATION GATEWAY -->
+        <section id="loginView" class="max-w-md mx-auto my-12 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+            <div class="bg-slate-900 p-6 text-center text-white">
+                <i class="fa-solid fa-shield-halved text-4xl text-amber-500 mb-2"></i>
+                <h2 class="text-xl font-bold">Database Authentication</h2>
+                <p class="text-xs text-slate-400 mt-1">Connecting securely to Supabase PostgreSQL</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Select Access Role</label>
+                    <select id="loginRole" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        <option value="CEO">Executive CEO</option>
+                        <option value="Manager">Regional Manager</option>
+                        <option value="Driver">Delivery Courier</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Username</label>
+                    <input type="text" id="loginUsername" placeholder="e.g. ceo, kabul_admin, driver_01" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Security PIN / Password</label>
+                    <input type="password" id="loginPin" placeholder="Enter PIN (e.g. 0000)" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none">
+                </div>
+                <button onclick="handleDatabaseLogin()" class="w-full bg-slate-900 hover:bg-slate-800 text-amber-500 font-bold py-3 rounded-lg shadow transition">
+                    Connect & Authenticate
+                </button>
+            </div>
+        </section>
+
+        <!-- 2. CEO DASHBOARD (LIVE DATA VIEW) -->
+        <section id="ceoView" class="hidden space-y-6">
+            <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-amber-500 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900">Chief Executive Dashboard</h2>
+                    <p class="text-sm text-gray-500">Live PostgreSQL Database Connected (staff_users & shipments)</p>
+                </div>
+                <button onclick="fetchDatabaseRecords()" class="bg-slate-900 text-amber-500 text-xs font-bold px-4 py-2 rounded-lg">
+                    <i class="fa-solid fa-rotate mr-1"></i> Refresh Live Data
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md border border-gray-200 p-6 space-y-4">
+                <h3 class="text-lg font-bold text-slate-900">Active Staff Accounts (From Database)</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-900 text-white text-xs uppercase">
+                                <th class="p-3">Full Name</th>
+                                <th class="p-3">Username</th>
+                                <th class="p-3">Role</th>
+                                <th class="p-3">Station</th>
+                                <th class="p-3">Guarantor (Zamin)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbStaffTableBody" class="divide-y divide-gray-200"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. DRIVER OTP ROUTE VIEW (LIVE DATA) -->
+        <section id="driverView" class="hidden space-y-4">
+            <div class="bg-slate-900 text-white p-4 rounded-xl flex justify-between items-center">
+                <h2 class="text-lg font-bold"><i class="fa-solid fa-motorcycle text-amber-500 mr-2"></i>Live Database Delivery Queue</h2>
+            </div>
+            <div id="dbDriverRouteList" class="grid gap-4 md:grid-cols-2"></div>
+        </section>
+
+    </main>
+
+    <!-- SUPABASE CLIENT INITIALIZATION & APP LOGIC -->
+    <script>
+        // REPLACE WITH YOUR ACTUAL SUPABASE CREDENTIALS FROM PROJECT SETTINGS
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentSessionUser = null;
+
+        // REAL DATABASE LOGIN QUERY
+        async function handleDatabaseLogin() {
+            const role = document.getElementById('loginRole').value;
+            const username = document.getElementById('loginUsername').value.trim();
+            const pin = document.getElementById('loginPin').value.trim();
+
+            if (!username || !pin) {
+                alert('Please enter username and PIN.');
+                return;
+            }
+
+            // Query PostgreSQL table 'staff_users'
+            const { data, error } = await _supabase
+                .from('staff_users')
+                .select('*')
+                .eq('username', username)
+                .eq('pin_hash', pin)
+                .eq('role', role)
+                .single();
+
+            if (error || !data) {
+                alert('Authentication Failed: Invalid credentials or database connection error.');
+                console.error(error);
+                return;
+            }
+
+            if (data.status === 'Blocked') {
+                alert('This account has been blocked.');
+                return;
+            }
+
+            currentSessionUser = data;
+            launchAppDashboard();
+        }
+
+        function launchAppDashboard() {
+            document.getElementById('loginView').classList.add('hidden');
+            document.getElementById('topBar').classList.remove('hidden');
+            document.getElementById('userInfoinnerHTML', 
+                document.getElementById('userInfo').innerHTML = `<span class="font-bold text-amber-500">${currentSessionUser.full_name}</span> (${currentSessionUser.role})`
+            );
+
+            document.getElementById('ceoView').classList.add('hidden');
+            document.getElementById('driverView').classList.add('hidden');
+
+            if (currentSessionUser.role === 'CEO' || currentSessionUser.role === 'Manager') {
+                document.getElementById('ceoView').classList.remove('hidden');
+                fetchDatabaseRecords();
+            } else if (currentSessionUser.role === 'Driver') {
+                document.getElementById('driverView').classList.remove('hidden');
+                fetchDriverShipments();
+            }
+        }
+
+        function logout() {
+            currentSessionUser = null;
+            document.getElementById('topBar').classList.add('hidden');
+            document.getElementById('ceoView').classList.add('hidden');
+            document.getElementById('driverView').classList.add('hidden');
+            document.getElementById('loginView').classList.remove('hidden');
+        }
+
+        // FETCH STAFF RECORDS FROM DATABASE
+        async function fetchDatabaseRecords() {
+            const { data, error } = await _supabase.from('staff_users').select('*');
+            if (error) {
+                alert('Error fetching database records.');
+                return;
+            }
+
+            const tbody = document.getElementById('dbStaffTableBody');
+            tbody.innerHTML = '';
+            data.forEach(user => {
+                tbody.innerHTML += `
+                    <tr class="border-b">
+                        <td class="p-3 font-bold">${user.full_name}</td>
+                        <td class="p-3 text-xs text-gray-500">@${user.username}</td>
+                        <td class="p-3"><span class="bg-slate-100 px-2 py-1 rounded text-xs">${user.role}</span></td>
+                        <td class="p-3 text-xs">${user.station}</td>
+                        <td class="p-3 text-xs text-gray-600">${user.guarantor_name || 'None'}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // FETCH & UPDATE SHIPMENTS FROM DATABASE
+        async function fetchDriverShipments() {
+            const { data, error } = await _supabase.from('shipments').select('*').eq('status', 'Out for Delivery');
+            if (error) return;
+
+            const container = document.getElementById('dbDriverRouteList');
+            container.innerHTML = '';
+
+            data.forEach(s => {
+                container.innerHTML += `
+                    <div class="bg-white p-4 rounded-xl shadow border space-y-3">
+                        <div>
+                            <span class="font-bold">${s.customer_name}</span>
+                            <p class="text-xs text-gray-500">${s.delivery_address}</p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded text-xs flex justify-between">
+                            <span>COD Due: <strong>${s.cod_afn} AFN</strong></span>
+                            <span>OTP Required: <strong>${s.delivery_otp}</strong></span>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="otp_${s.id}" placeholder="Enter 4-Digit OTP" class="border rounded px-2 py-1 text-sm w-full">
+                            <button onclick="verifyDbOtp('${s.id}', '${s.delivery_otp}')" class="bg-slate-900 text-amber-500 font-bold px-3 py-1 rounded text-xs">Verify</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // REAL DATABASE OTP UPDATE
+        async function verifyDbOtp(orderId, expectedOtp) {
+            const entered = document.getElementById(`otp_${orderId}`).value.trim();
+            if (entered !== expectedOtp) {
+                alert('? Invalid OTP!');
+                return;
+            }
+
+            // Update database status
+            const { error } = await _supabase
+                .from('shipments')
+                .update({ status: 'Delivered', otp_verified: true, delivered_at: new Date() })
+                .eq('id', orderId);
+
+            if (error) {
+                alert('Database update failed.');
+                return;
+            }
+
+            alert('? OTP Verified! Database updated and order cleared from active queue.');
+            fetchDriverShipments();
+        }
+    </script>
+</body>
+</html>
